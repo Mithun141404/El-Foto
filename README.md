@@ -1,80 +1,96 @@
-# 📸 El Foto (Context Camera)
+# 🌈 El Foto: Generative Context Camera
+> *Solve "Posing Anxiety" with On-Device Scene Intelligence & Cloud-Powered Spatial Rigging*
 
-**El Foto** is an AI-powered native Android application designed to solve "posing anxiety." Instead of awkward snapshots, El Foto analyzes your environment in real-time and provides a mathematically generated, aesthetically appropriate skeletal pose overlay directly on your camera viewfinder.
+[![Kotlin](https://img.shields.io/badge/Kotlin-1.9+-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org) 
+[![Jetpack Compose](https://img.shields.io/badge/Jetpack_Compose-2024.01-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose) 
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com) 
+[![Gemini](https://img.shields.io/badge/AI-Gemini_2.5_Flash-F9AB00?logo=google-gemini&logoColor=white)](https://ai.google.dev/)
 
----
-
-## ✨ Features
-
-- **🧠 Generative Pose Direction**: Uses **Google Gemini Flash** to dynamically generate 33-point skeletal poses based on your environment.
-- **👁️ On-Device Scene Intelligence**: Instantly detects your setting (Cafe, Beach, Gym, Graduation, etc.) using a local ML Kit classification engine.
-- **📐 Mathematical Precision**: Renders 33 normalized anatomical keypoints on a glowing, semi-transparent Compose Canvas.
-- **⚡ Zero-Lag Viewfinder**: Built with **CameraX** for a smooth 60fps preview and high-resolution captures.
-- **🔒 Privacy First**: All visual analysis happens on-device; only a scene label (e.g., "Park") is sent to the cloud for pose generation.
+**El Foto** is a high-performance native Android application that bridges on-device computer vision with LLM-based spatial reasoning to guide subjects through the perfect pose for any environment.
 
 ---
 
-## 🏗️ Technical Architecture
+## 📽️ The Problem vs. The Solution
+
+**The Problem:** Most photographers aren't professional directors. Subjects often feel awkward, and "what should I do with my hands?" is the universal question that ruins great backgrounds.
+
+**The Solution:** El Foto uses a **Hybrid Edge-Cloud Architecture**. 
+1. **The Eye (ML Kit)**: Identifies the specific context local to the device.
+2. **The Brain (Gemini 2.5 Flash)**: Acts as a professional rigger to generate a 33-point JSON wireframe.
+3. **The Magic (Compose Canvas)**: Overlays a glowing, static guide for the subject to align with.
+
+---
+
+## 🛠️ Advanced Technical Architecture
+
+### 1. On-Device Contextual Classification (Edge)
+Using a customized classification engine built on **ML Kit Image Labeling**, El Foto processes a low-res buffer from the CameraX `ImageAnalysis` stream. It maps high-confidence labels to a normalized "Scene Ontology":
+- `academic` + `mortarboard` ➞ **Graduation**
+- `cup` + `table` + `aroma` ➞ **Cafe**
+- `sand` + `ocean` ➞ **Beach**
+
+### 2. Generative Spatial Rigging (Cloud)
+The backend doesn't just return a static image. It uses a **Strict LLM Prompting Strategy** to force Gemini to return a raw BlazePose-compatible JSON array of coordinates.
+
+```json
+{
+  "pose_name": "The Confident Graduate",
+  "keypoints": [{"x": 0.5, "y": 0.15}, ...] 
+}
+```
+
+### 3. Glow-Buffer Rendering Engine (UI)
+The `PoseOverlay` utilizes a multi-pass drawing strategy:
+- **Pass 1 (Diffusion)**: 18px stroke with 8% alpha for ambient glow.
+- **Pass 2 (Inner Core)**: 10px stroke with 15% alpha.
+- **Pass 3 (Vector)**: 4px solid stroke with 75% alpha for precise alignment.
+
+---
+
+## 🧬 System Flow
 
 ```mermaid
-graph TD
-    A[CameraX Preview] --> B[Scene Analysis]
-    B --> C{ML Kit Classification}
-    C -->|Scene: 'Beach'| D[FastAPI Backend]
-    D --> E[Gemini Flash API]
-    E -->|33 Keypoints JSON| F[Skeletal Renderer]
-    F --> G[Glowing Compose Overlay]
-    G --> H[Final Photo Capture]
+sequenceDiagram
+    participant U as User (App)
+    participant ML as ML Kit (Local)
+    participant API as FastAPI Backend
+    participant LLM as Gemini 2.5 Flash
+
+    U->>ML: Image Analysis Frame
+    ML->>U: Scene: "Graduation"
+    U->>API: POST /generate-pose {"scene": "Graduation"}
+    API->>LLM: Spatial Rigging Prompt
+    LLM->>API: 33-Point JSON Skeleton
+    API->>U: Normalized Coordinates
+    U->>U: Render Glowing Canvas Overlay
 ```
 
 ---
 
-## 🚀 Getting Started
+## 🏃‍♂️ Deployment Guide
 
-### 1. Backend (Python FastAPI)
-The backend acts as the "Brain," integrating with Gemini to generate coordinates.
-
+### Backend: FastAPI Core
 ```bash
 cd backend
-python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-
-# Create .env with your key
-echo "GEMINI_API_KEY=your_key_here" > .env
-
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
+*Requires `GEMINI_API_KEY` in `.env`*
 
-### 2. Android App (Kotlin + Jetpack Compose)
-The frontend handles the "Eye" and the "Magic" rendering.
-
-- **Emulator**: Works out of the box (points to `10.0.2.2`).
-- **Physical Device**: Update `BASE_URL` in `ApiClient.kt` to your machine's local IP.
-
-**Build Requirements:**
-- JDK 17
-- Android SDK 34 (Upside Down Cake)
-
----
-
-## 🛠️ Tech Stack
-
-- **Android**: Kotlin, Jetpack Compose, CameraX, ML Kit, Retrofit, Coroutines.
-- **Backend**: Python 3.x, FastAPI, Google GenAI SDK (Gemini).
-- **Inference**: Gemini 2.5 Flash.
+### Android: Build & Sideload
+1. Open in Android Studio or use CLI:
+   ```bash
+   export JAVA_HOME=~/jdk/jdk-17.0.12
+   ./gradlew assembleDebug
+   ```
+2. Deploy `app-debug.apk` to any device running API 26+.
 
 ---
 
-## 📂 Project Structure
-
-```text
-├── android/ContextCamera/  # Full Android Studio project
-├── backend/                # FastAPI source & requirements
-└── context-camera-v1.0.apk # Pre-built debug APK
-```
+## 🔭 Future Scope
+- **Dynamic Motion Alignment**: Use MediaPipe real-time tracking to turn the overlay green when the user successfully matches the pose.
+- **Multi-Person Support**: Contextual poses for couples or groups.
+- **Scene-Aware Lighting**: Suggest camera settings based on detected ambient light.
 
 ---
-
-## 📄 License
-This project is open-source and free to use for creative photography.
+*Created by [Antigravity](https://google.com) for professional photography assistance.*
