@@ -1,0 +1,32 @@
+# Android
+*.apk
+*.aab
+*.dex
+*.class
+*.log
+*.tmp
+*.bak
+local.properties
+.gradle/
+build/
+app/build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Java/Kotlin
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.env
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+*.swp
