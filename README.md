@@ -93,4 +93,4 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 - **Scene-Aware Lighting**: Suggest camera settings based on detected ambient light.
 
 ---
-*Created by [Antigravity](https://google.com) for professional photography assistance.*
+*This project is an open source and free to use*
