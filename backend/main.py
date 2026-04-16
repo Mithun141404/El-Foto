@@ -12,7 +12,7 @@ from typing import Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from google import genai
+import google.generativeai as genai
 from pydantic import BaseModel
 
 load_dotenv()
@@ -36,7 +36,8 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     raise RuntimeError("GEMINI_API_KEY environment variable is not set")
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-flash-latest")
 
 # ---------------------------------------------------------------------------
 # Models
@@ -122,27 +123,25 @@ async def generate_pose(request: PoseRequest):
     prompt = POSE_PROMPT.format(scene=scene)
 
     try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
+        print(f"--- Generating pose for scene: {scene} ---")
+        response = model.generate_content(
+            prompt,
+            generation_config={"response_mime_type": "application/json"}
         )
         raw = response.text.strip()
-
+        print(f"Gemini response received (length: {len(raw)})")
+        
         # Strip markdown code fences if present
         if raw.startswith("```"):
             raw = re.sub(r"^```(?:json)?\s*", "", raw)
             raw = re.sub(r"\s*```$", "", raw)
 
         data = json.loads(raw)
-
         pose_name = data.get("pose_name", f"{scene} Pose")
         keypoints_raw = data.get("keypoints", [])
 
         if len(keypoints_raw) != 33:
-            raise HTTPException(
-                status_code=500,
-                detail=f"LLM returned {len(keypoints_raw)} keypoints instead of 33",
-            )
+            raise ValueError(f"LLM returned {len(keypoints_raw)} keypoints instead of 33")
 
         keypoints = []
         for kp in keypoints_raw:
@@ -157,13 +156,12 @@ async def generate_pose(request: PoseRequest):
         )
 
     except json.JSONDecodeError:
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to parse LLM response as JSON",
-        )
-    except HTTPException:
-        raise
+        print(f"!!! JSON Parse Error. Raw: {raw}")
+        raise HTTPException(status_code=500, detail="Failed to parse LLM response as JSON")
     except Exception as e:
+        print(f"!!! Error generating pose: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 

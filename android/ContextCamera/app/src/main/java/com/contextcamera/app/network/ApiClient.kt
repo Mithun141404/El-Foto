@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit
 object ApiClient {
 
     // ★ Change this to your server's address
-    private const val BASE_URL = "http://10.0.2.2:8000"
+    private const val BASE_URL = "http://192.168.29.86:8000"
 
     private val okHttpClient: OkHttpClient by lazy {
         val logging = HttpLoggingInterceptor().apply {
@@ -23,9 +23,9 @@ object ApiClient {
         }
         OkHttpClient.Builder()
             .addInterceptor(logging)
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
             .build()
     }
 
