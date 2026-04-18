@@ -1,4 +1,4 @@
-# 🌈 El Foto: Generative Context Camera
+# El Foto: Generative Context Camera
 > *Solve "Posing Anxiety" with On-Device Scene Intelligence & Cloud-Powered Spatial Rigging*
 
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9+-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org) 
