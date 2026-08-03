@@ -12,8 +12,11 @@ import re
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from pydantic import BaseModel
+
+from poses import POSE_LIBRARY, POSE_DESCRIPTIONS
 
 load_dotenv()
 
@@ -36,8 +39,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     raise RuntimeError("GEMINI_API_KEY environment variable is not set")
 
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-flash-latest")
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 
 # ---------------------------------------------------------------------------
@@ -59,59 +61,36 @@ class PoseResponse(BaseModel):
 # Vision prompt — one shot: scene analysis + pose generation
 # ---------------------------------------------------------------------------
 
-VISION_PROMPT = """You are an expert photography scene analyst and professional pose director.
+VISION_PROMPT = f"""You are an expert photography scene analyst and professional pose director.
 
 Carefully examine this camera frame. Identify the exact scene, environment,
 lighting conditions, time of day, and overall atmosphere.
 
-Then generate ONE natural, creative, aesthetically pleasing pose that a person
-would look stunning doing in a photo taken in this exact setting.
+Then select the MOST APPROPRIATE pose from the following library for a person
+in this exact setting. The pose should fit naturally with the environment.
 
-You MUST return EXACTLY 33 keypoints in the BlazePose format.
-Each keypoint is a normalized coordinate: x is 0.0 (left) → 1.0 (right),
-y is 0.0 (top) → 1.0 (bottom), representing where each body part should be
-positioned in the camera frame.
-
-The 33 keypoints IN ORDER are:
-0: nose
-1: left_eye_inner, 2: left_eye, 3: left_eye_outer
-4: right_eye_inner, 5: right_eye, 6: right_eye_outer
-7: left_ear, 8: right_ear
-9: mouth_left, 10: mouth_right
-11: left_shoulder, 12: right_shoulder
-13: left_elbow, 14: right_elbow
-15: left_wrist, 16: right_wrist
-17: left_pinky, 18: right_pinky
-19: left_index, 20: right_index
-21: left_thumb, 22: right_thumb
-23: left_hip, 24: right_hip
-25: left_knee, 26: right_knee
-27: left_ankle, 28: right_ankle
-29: left_heel, 30: right_heel
-31: left_foot_index, 32: right_foot_index
+Pose Library:
+{POSE_DESCRIPTIONS}
 
 Rules:
-- The pose must look natural and fitting for the exact scene visible in the image.
-- The person should be roughly centered in the frame.
-- All coordinates must be strictly between 0.0 and 1.0.
-- Head should typically be in the upper portion (y: 0.10–0.25).
-- Feet should typically be in the lower portion (y: 0.85–0.95).
-- The pose should be front-facing or three-quarter angle.
-- Make the pose expressive and interesting — not just a stiff stance.
 - scene_name MUST be a vivid, evocative 3–8 word phrase capturing the exact mood,
   lighting, and environment (e.g. "sun-drenched golden beach at sunset",
   "cozy dimly-lit espresso café", "misty pine forest at dawn",
   "bustling neon-lit urban rooftop"). NEVER use bland labels like
   "Outdoor", "Indoor", "Nature", or "Urban".
+- pose_name should be a highly descriptive, catchy name for the pose you selected (e.g. "Relaxed Golden Hour Lean", "Urban Action Sprint").
+- pose_id MUST be the integer ID (1-8) of the pose you selected from the library above.
+- person_scale MUST be a float from 0.2 to 1.2 indicating how large the person should be in the frame (e.g., 0.3 for a distant landscape shot, 1.0 for a standard portrait).
+- person_center_x and person_center_y MUST be float coordinates (0.0 to 1.0) for where the person should be placed in the scene (e.g. place them on a rock, or center frame).
 
 Return ONLY a valid JSON object — no markdown, no extra text:
 {{
   "scene_name": "vivid descriptive scene name here",
   "pose_name": "short creative pose name",
-  "keypoints": [
-    {{"x": 0.5, "y": 0.15}},
-    ... (33 total keypoints in order)
-  ]
+  "pose_id": 1,
+  "person_scale": 1.0,
+  "person_center_x": 0.5,
+  "person_center_y": 0.6
 }}"""
 
 
@@ -135,12 +114,15 @@ async def analyze_and_pose(image: UploadFile = File(...)):
     try:
         print(f"--- Gemini Vision analyzing image ({len(image_bytes):,} bytes | {mime_type}) ---")
 
-        response = model.generate_content(
-            [
-                {"mime_type": mime_type, "data": image_bytes},
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
                 VISION_PROMPT,
             ],
-            generation_config={"response_mime_type": "application/json"},
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json"
+            ),
         )
         raw = response.text.strip()
         print(f"Response received (length: {len(raw)})")
@@ -153,17 +135,30 @@ async def analyze_and_pose(image: UploadFile = File(...)):
         data = json.loads(raw)
         scene_name = data.get("scene_name", "Beautiful Scene")
         pose_name = data.get("pose_name", "Natural Pose")
-        keypoints_raw = data.get("keypoints", [])
+        pose_id = data.get("pose_id", 1)
+        scale = float(data.get("person_scale", 1.0))
+        cx = float(data.get("person_center_x", 0.5))
+        cy = float(data.get("person_center_y", 0.6))
 
-        if len(keypoints_raw) != 33:
-            raise ValueError(f"Expected 33 keypoints, got {len(keypoints_raw)}")
+        keypoints_raw = POSE_LIBRARY.get(pose_id, POSE_LIBRARY[1])
+        
+        # Apply scaling and translation
+        # Base poses are centered roughly at x=0.5, y=0.55
+        transformed_raw = []
+        for kp in keypoints_raw:
+            dx = kp["x"] - 0.5
+            dy = kp["y"] - 0.55
+            transformed_raw.append({
+                "x": cx + (dx * scale),
+                "y": cy + (dy * scale)
+            })
 
         keypoints = [
             Keypoint(
                 x=max(0.0, min(1.0, float(kp["x"]))),
                 y=max(0.0, min(1.0, float(kp["y"]))),
             )
-            for kp in keypoints_raw
+            for kp in transformed_raw
         ]
 
         print(f"✓ Scene: '{scene_name}' | Pose: '{pose_name}'")

@@ -4,6 +4,8 @@ import android.content.ContentValues
 import android.content.Context
 import android.os.Build
 import android.provider.MediaStore
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.util.Log
 import android.widget.Toast
 import androidx.camera.core.CameraSelector
@@ -67,6 +69,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.contextcamera.app.viewmodel.CameraUiState
 import com.contextcamera.app.viewmodel.CameraViewModel
 import com.contextcamera.app.viewmodel.Status
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Icon
+import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -137,6 +143,40 @@ fun CameraScreen(
             PoseOverlay(keypoints = uiState.keypoints, modifier = Modifier.fillMaxSize())
         }
 
+        val onPoseClickAction = {
+            viewModel.onCapturing()
+            imageCapture.takePicture(
+                ContextCompat.getMainExecutor(context),
+                object : ImageCapture.OnImageCapturedCallback() {
+                    override fun onCaptureSuccess(image: ImageProxy) {
+                        try {
+                            val buffer = image.planes[0].buffer
+                            val bytes  = ByteArray(buffer.remaining())
+                            buffer.get(bytes)
+                            image.close()
+                            
+                            val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                            val maxDim = 400f
+                            val scale = maxDim / maxOf(bitmap.width, bitmap.height)
+                            val resized = if (scale < 1f) {
+                                Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt(), (bitmap.height * scale).toInt(), true)
+                            } else bitmap
+                            
+                            val out = ByteArrayOutputStream()
+                            resized.compress(Bitmap.CompressFormat.JPEG, 50, out)
+                            viewModel.onImageCaptured(out.toByteArray())
+                        } catch (e: Exception) {
+                            image.close()
+                            viewModel.onError("Frame processing failed: ${e.message}")
+                        }
+                    }
+                    override fun onError(ex: ImageCaptureException) {
+                        viewModel.onError("Capture failed: ${ex.message}")
+                    }
+                },
+            )
+        }
+
         // ── 3. AI scanning animation ─────────────────────────────────────────
         AnimatedVisibility(
             visible = uiState.status == Status.CAPTURING || uiState.status == Status.ANALYZING,
@@ -146,40 +186,30 @@ fun CameraScreen(
             ScanningOverlay(status = uiState.status)
         }
 
-        // ── 4. Scene / pose info banner ──────────────────────────────────────
-        TopInfoBanner(uiState = uiState)
+        // ── 4. Top Controls (Scan / Clear) ───────────────────────────────────
+        TopControls(
+            uiState = uiState,
+            onPoseClick = onPoseClickAction,
+            onClearClick = { viewModel.clearPose() }
+        )
+
+        // ── 5. Info Banner (Scene & Pose names) ──────────────────────────────
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 140.dp) // Offset above bottom controls
+            ) {
+                InfoBanner(uiState = uiState)
+            }
+        }
 
         // ── 5. Bottom controls ───────────────────────────────────────────────
         BottomControls(
             uiState      = uiState,
-            onPoseClick  = {
-                viewModel.onCapturing()
-                // Capture an in-memory JPEG frame — never saved to gallery
-                imageCapture.takePicture(
-                    ContextCompat.getMainExecutor(context),
-                    object : ImageCapture.OnImageCapturedCallback() {
-                        override fun onCaptureSuccess(image: ImageProxy) {
-                            try {
-                                // ImageCapture delivers JPEG via planes[0]
-                                val buffer = image.planes[0].buffer
-                                val bytes  = ByteArray(buffer.remaining())
-                                buffer.get(bytes)
-                                image.close()
-                                viewModel.onImageCaptured(bytes)
-                            } catch (e: Exception) {
-                                image.close()
-                                viewModel.onError("Frame processing failed: ${e.message}")
-                            }
-                        }
-                        override fun onError(ex: ImageCaptureException) {
-                            viewModel.onError("Capture failed: ${ex.message}")
-                        }
-                    },
-                )
-            },
             onShutterClick = { capturePhoto(context, imageCapture) },
             onFlipClick    = { viewModel.toggleCamera() },
-            onClearClick   = { viewModel.clearPose() },
         )
     }
 }
@@ -309,8 +339,6 @@ private fun ScanningOverlay(status: Status) {
             modifier                = Modifier.align(Alignment.Center),
             horizontalAlignment     = Alignment.CenterHorizontally,
         ) {
-            Text(text = "🤖", fontSize = 54.sp)
-            Spacer(Modifier.height(12.dp))
             Text(
                 text          = "AI VISION",
                 color         = PurpleLight,
@@ -334,100 +362,45 @@ private fun ScanningOverlay(status: Status) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun TopInfoBanner(uiState: CameraUiState) {
-    val showBanner = uiState.sceneName.isNotEmpty() ||
-            (uiState.status == Status.ERROR && uiState.errorMessage != null)
+private fun TopControls(
+    uiState: CameraUiState,
+    onPoseClick: () -> Unit,
+    onClearClick: () -> Unit
+) {
+    val isBusy = uiState.status == Status.CAPTURING || uiState.status == Status.ANALYZING
+    val isPoseReady = uiState.status == Status.POSE_READY
 
-    AnimatedVisibility(
-        visible = showBanner,
-        enter   = fadeIn(tween(400)),
-        exit    = fadeOut(tween(300)),
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 40.dp, start = 18.dp, end = 18.dp),
     ) {
-        Column(
-            modifier            = Modifier
-                .fillMaxWidth()
-                .padding(top = 54.dp, start = 18.dp, end = 18.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Start
         ) {
-            // ── Scene name card ──────────────────────────────────────────────
-            if (uiState.sceneName.isNotEmpty()) {
+            if (isBusy) {
+                CircularProgressIndicator(
+                    color = Color.White,
+                    modifier = Modifier.size(36.dp),
+                    strokeWidth = 3.dp
+                )
+            } else {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .height(36.dp)
                         .clip(RoundedCornerShape(18.dp))
-                        .background(
-                            Brush.horizontalGradient(
-                                listOf(Color(0x99000000), Color(0xBB1A0040)),
-                            )
-                        )
-                        .border(1.dp, GlassBorder, RoundedCornerShape(18.dp))
-                        .padding(horizontal = 18.dp, vertical = 14.dp),
-                ) {
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text          = "📍",
-                                fontSize      = 11.sp,
-                            )
-                            Spacer(Modifier.width(5.dp))
-                            Text(
-                                text          = "SCENE DETECTED",
-                                color         = PurpleLight,
-                                fontSize      = 10.sp,
-                                fontWeight    = FontWeight.ExtraBold,
-                                letterSpacing = 2.sp,
-                            )
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text     = uiState.sceneName,
-                            color    = Color.White,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-
-            // ── Pose name chip ───────────────────────────────────────────────
-            if (uiState.poseName.isNotEmpty()) {
-                Spacer(Modifier.height(10.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(22.dp))
-                        .background(
-                            Brush.horizontalGradient(listOf(Purple.copy(0.85f), Blue.copy(0.85f)))
-                        )
-                        .border(1.dp, GlassBorder, RoundedCornerShape(22.dp))
-                        .padding(horizontal = 18.dp, vertical = 8.dp),
+                        .background(Color.Black.copy(0.4f))
+                        .clickable { if (isPoseReady) onClearClick() else onPoseClick() }
+                        .padding(horizontal = 14.dp),
+                    contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text          = "✨  ${uiState.poseName.uppercase()}",
-                        color         = Color.White,
-                        fontSize      = 11.sp,
-                        fontWeight    = FontWeight.Bold,
-                        letterSpacing = 1.sp,
-                    )
-                }
-            }
-
-            // ── Error card ───────────────────────────────────────────────────
-            if (uiState.status == Status.ERROR && uiState.errorMessage != null) {
-                Spacer(Modifier.height(10.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Red.copy(alpha = 0.82f))
-                        .padding(horizontal = 18.dp, vertical = 12.dp),
-                ) {
-                    Text(
-                        text      = "⚠  ${uiState.errorMessage}",
-                        color     = Color.White,
-                        fontSize  = 12.sp,
-                        textAlign = TextAlign.Center,
+                        text = if (isPoseReady) "CLEAR" else "SCAN",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
                     )
                 }
             }
@@ -435,161 +408,163 @@ private fun TopInfoBanner(uiState: CameraUiState) {
     }
 }
 
+@Composable
+private fun InfoBanner(uiState: CameraUiState) {
+    val showBanner = uiState.sceneName.isNotEmpty() || (uiState.status == Status.ERROR && uiState.errorMessage != null)
+    
+    AnimatedVisibility(
+        visible = showBanner,
+        enter   = fadeIn(tween(400)),
+        exit    = fadeOut(tween(300)),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+                // Scene name card
+                if (uiState.sceneName.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(Brush.horizontalGradient(listOf(Color(0x99000000), Color(0xBB1A0040))))
+                            .border(1.dp, GlassBorder, RoundedCornerShape(18.dp))
+                            .padding(horizontal = 18.dp, vertical = 14.dp),
+                    ) {
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("📍", fontSize = 11.sp)
+                                Spacer(Modifier.width(5.dp))
+                                Text(
+                                    text = "SCENE DETECTED",
+                                    color = PurpleLight,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    letterSpacing = 2.sp,
+                                )
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                text = uiState.sceneName,
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+
+                // Pose name chip
+                if (uiState.poseName.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(22.dp))
+                            .background(Brush.horizontalGradient(listOf(Purple.copy(0.85f), Blue.copy(0.85f))))
+                            .border(1.dp, GlassBorder, RoundedCornerShape(22.dp))
+                            .padding(horizontal = 18.dp, vertical = 8.dp),
+                    ) {
+                        Text(
+                            text = "✨  ${uiState.poseName.uppercase()}",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp,
+                        )
+                    }
+                }
+
+                // Error card
+                if (uiState.status == Status.ERROR && uiState.errorMessage != null) {
+                    Spacer(Modifier.height(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Red.copy(alpha = 0.82f))
+                            .padding(horizontal = 18.dp, vertical = 12.dp),
+                    ) {
+                        Text(
+                            text = "⚠  ${uiState.errorMessage}",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+        }
+    }
+}
 // ─────────────────────────────────────────────────────────────────────────────
 // Bottom controls — redesigned with gradient POSE button and premium feel
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun BottomControls(
-    uiState      : CameraUiState,
-    onPoseClick  : () -> Unit,
+    uiState: CameraUiState,
     onShutterClick: () -> Unit,
-    onFlipClick  : () -> Unit,
-    onClearClick : () -> Unit,
+    onFlipClick: () -> Unit,
 ) {
-    val inf = rememberInfiniteTransition(label = "idle_pulse")
-    val idlePulse by inf.animateFloat(
-        0.5f, 1f,
-        infiniteRepeatable(tween(1600), RepeatMode.Reverse),
-        label = "idlePulse",
-    )
-
-    val isPoseReady = uiState.status == Status.POSE_READY
-    val isBusy      = uiState.status == Status.CAPTURING || uiState.status == Status.ANALYZING
-    val isEnabled   = uiState.status == Status.IDLE || isPoseReady || uiState.status == Status.ERROR
-
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-        // Panel background — fade from transparent to dark
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        // Classic camera control panel (solid black/translucent strip)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color.Transparent, Color.Black.copy(0.80f), Color.Black.copy(0.92f)),
-                    )
-                )
-                .padding(horizontal = 28.dp, vertical = 26.dp),
+                .background(Color.Black.copy(0.6f))
+                .padding(horizontal = 32.dp, vertical = 24.dp)
         ) {
             Row(
-                modifier             = Modifier.fillMaxWidth(),
-                horizontalArrangement= Arrangement.SpaceBetween,
-                verticalAlignment    = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-
-                // ── Flip / lens toggle ───────────────────────────────────────
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(
-                        modifier = Modifier
-                            .size(54.dp)
-                            .clip(CircleShape)
-                            .background(GlassWhite)
-                            .border(1.dp, GlassBorder, CircleShape)
-                            .clickable { onFlipClick() },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("⟲", color = Color.White, fontSize = 26.sp)
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text          = "FLIP",
-                        color         = Color.White.copy(0.5f),
-                        fontSize      = 10.sp,
-                        letterSpacing = 1.sp,
+                // Left: Flip Button
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(Color.DarkGray.copy(0.6f))
+                        .clickable { onFlipClick() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Flip Camera",
+                        tint = Color.White,
+                        modifier = Modifier.size(28.dp)
                     )
                 }
 
-                // ── POSE / CLEAR button ──────────────────────────────────────
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    if (isBusy) {
-                        // Spinner while AI is working
-                        Box(
-                            modifier = Modifier
-                                .height(56.dp)
-                                .width(136.dp)
-                                .clip(RoundedCornerShape(28.dp))
-                                .background(GlassWhite)
-                                .border(1.dp, PurpleLight.copy(0.4f), RoundedCornerShape(28.dp)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            CircularProgressIndicator(
-                                color        = PurpleLight,
-                                modifier     = Modifier.size(22.dp),
-                                strokeWidth  = 2.5.dp,
-                            )
-                        }
-                    } else {
-                        val gradient = if (isPoseReady)
-                            Brush.horizontalGradient(listOf(Orange, Red))
-                        else
-                            Brush.horizontalGradient(listOf(Purple, Blue))
+                // Center: Classic Shutter Button
+                Box(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .clip(CircleShape)
+                        .border(4.dp, Color.White, CircleShape)
+                        .padding(8.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
+                        .clickable { onShutterClick() }
+                )
 
-                        val idleBorder = if (uiState.status == Status.IDLE)
-                            Modifier.border(
-                                (2.5f * idlePulse).dp,
-                                Purple.copy(alpha = idlePulse * 0.55f),
-                                RoundedCornerShape(28.dp),
-                            )
-                        else Modifier
-
-                        Box(
-                            modifier = Modifier
-                                .height(56.dp)
-                                .width(136.dp)
-                                .clip(RoundedCornerShape(28.dp))
-                                .background(
-                                    if (isEnabled) gradient
-                                    else Brush.horizontalGradient(
-                                        listOf(Color.DarkGray.copy(0.5f), Color.DarkGray.copy(0.5f))
-                                    )
-                                )
-                                .then(idleBorder)
-                                .clickable(enabled = isEnabled) {
-                                    if (isPoseReady) onClearClick() else onPoseClick()
-                                },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text          = if (isPoseReady) "CLEAR" else "POSE",
-                                color         = Color.White,
-                                fontSize      = 17.sp,
-                                fontWeight    = FontWeight.ExtraBold,
-                                letterSpacing = 2.sp,
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(7.dp))
-                    Text(
-                        text          = when {
-                            isBusy      -> "AI THINKING..."
-                            isPoseReady -> "TAP TO CLEAR"
-                            else        -> "SUGGEST POSE"
-                        },
-                        color         = Color.White.copy(0.45f),
-                        fontSize      = 9.sp,
-                        letterSpacing = 0.8.sp,
-                    )
-                }
-
-                // ── Shutter button ───────────────────────────────────────────
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(
-                        modifier = Modifier
-                            .size(70.dp)
-                            .clip(CircleShape)
-                            .border(3.dp, Color.White.copy(0.35f), CircleShape)
-                            .padding(6.dp)
-                            .clip(CircleShape)
-                            .background(Color.White)
-                            .clickable { onShutterClick() },
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text          = "SHOOT",
-                        color         = Color.White.copy(0.5f),
-                        fontSize      = 10.sp,
-                        letterSpacing = 1.sp,
-                    )
+                // Right: Gallery preview window (placeholder)
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.DarkGray)
+                        .border(1.dp, Color.Gray, RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Could load recent image here; using a placeholder for now
+                    Text("🖼", fontSize = 20.sp)
                 }
             }
         }
