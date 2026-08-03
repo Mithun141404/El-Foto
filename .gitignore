@@ -1,4 +1,6 @@
-# Android
+# ==============================
+# Android Build Artifacts
+# ==============================
 *.apk
 *.aab
 *.dex
@@ -6,7 +8,11 @@
 *.log
 *.tmp
 *.bak
+
+# Android local config (machine-specific, contains secrets)
 local.properties
+
+# Gradle
 .gradle/
 build/
 app/build/
@@ -14,19 +20,38 @@ captures/
 .externalNativeBuild/
 .cxx/
 
-# Java/Kotlin
+# ==============================
+# Java / Kotlin
+# ==============================
 *.jar
 !gradle/wrapper/gradle-wrapper.jar
 
-# Python
+# ==============================
+# Python / Backend
+# ==============================
 __pycache__/
 *.py[cod]
 *.egg-info/
+*.egg
 .venv/
-.env
+venv/
+env/
+dist/
+.env            # NEVER commit real secrets
 
-# IDE
+# ==============================
+# IDE & Editor
+# ==============================
 .idea/
 *.iml
 .DS_Store
 *.swp
+*.swo
+Thumbs.db
+.vscode/
+
+# ==============================
+# OS artifacts
+# ==============================
+.DS_Store
+desktop.ini

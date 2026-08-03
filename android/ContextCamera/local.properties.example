@@ -1,0 +1,4 @@
+# local.properties — machine-specific config, NOT committed to git.
+# Copy this file as local.properties and fill in your values.
+sdk.dir=/path/to/your/Android/Sdk
+BACKEND_URL=http://192.168.29.86:8000

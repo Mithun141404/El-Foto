@@ -1,96 +1,273 @@
-# El Foto: Generative Context Camera
-> *Solve "Posing Anxiety" with On-Device Scene Intelligence & Cloud-Powered Spatial Rigging*
+<div align="center">
 
-[![Kotlin](https://img.shields.io/badge/Kotlin-1.9+-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org) 
-[![Jetpack Compose](https://img.shields.io/badge/Jetpack_Compose-2024.01-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose) 
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com) 
-[![Gemini](https://img.shields.io/badge/AI-Gemini_2.5_Flash-F9AB00?logo=google-gemini&logoColor=white)](https://ai.google.dev/)
+<img src="https://readme-typing-svg.demolab.com?font=Fira+Code&size=32&duration=2800&pause=2000&color=A855F7&center=true&vCenter=true&width=940&lines=El+Foto+%E2%80%94+Generative+Context+Camera" alt="El Foto" />
 
-**El Foto** is a high-performance native Android application that bridges on-device computer vision with LLM-based spatial reasoning to guide subjects through the perfect pose for any environment.
+<h3>AI-powered photography assistant that sees your world and directs your perfect pose</h3>
+
+<p>
+  <a href="https://kotlinlang.org"><img src="https://img.shields.io/badge/Kotlin-2.0-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" alt="Kotlin"/></a>
+  <a href="https://developer.android.com/jetpack/compose"><img src="https://img.shields.io/badge/Jetpack_Compose-2024.06-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white" alt="Compose"/></a>
+  <a href="https://fastapi.tiangolo.com"><img src="https://img.shields.io/badge/FastAPI-0.115-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI"/></a>
+  <a href="https://ai.google.dev/"><img src="https://img.shields.io/badge/Gemini_2.5_Flash-Vision-F9AB00?style=for-the-badge&logo=google-gemini&logoColor=white" alt="Gemini"/></a>
+  <img src="https://img.shields.io/badge/API-26%2B-brightgreen?style=for-the-badge&logo=android&logoColor=white" alt="API 26+"/>
+</p>
+
+<p>
+  <a href="#-problem--solution">Problem</a> •
+  <a href="#-architecture">Architecture</a> •
+  <a href="#-quick-start">Quick Start</a> •
+  <a href="#-api-reference">API Reference</a> •
+  <a href="#-tech-stack">Tech Stack</a> •
+  <a href="#-roadmap">Roadmap</a>
+</p>
+
+</div>
 
 ---
 
-## 📽️ The Problem vs. The Solution
+## ✨ What is El Foto?
 
-**The Problem:** Most photographers aren't professional directors. Subjects often feel awkward, and "what should I do with my hands?" is the universal question that ruins great backgrounds.
+**El Foto** is a real-time AI photography assistant for Android. Point your camera at any environment — a café, a beach, a graduation hall — and it **analyzes the scene with Gemini Vision AI** and overlays a glowing, personalized pose guide directly on your camera viewfinder.
 
-**The Solution:** El Foto uses a **Hybrid Edge-Cloud Architecture**. 
-1. **The Eye (ML Kit)**: Identifies the specific context local to the device.
-2. **The Brain (Gemini 2.5 Flash)**: Acts as a professional rigger to generate a 33-point JSON wireframe.
-3. **The Magic (Compose Canvas)**: Overlays a glowing, static guide for the subject to align with.
+> No more *"what do I do with my hands?"* — El Foto sees your world and directs your perfect shot.
 
 ---
 
-## 🛠️ Advanced Technical Architecture
+## 🎯 Problem & Solution
 
-### 1. On-Device Contextual Classification (Edge)
-Using a customized classification engine built on **ML Kit Image Labeling**, El Foto processes a low-res buffer from the CameraX `ImageAnalysis` stream. It maps high-confidence labels to a normalized "Scene Ontology":
-- `academic` + `mortarboard` ➞ **Graduation**
-- `cup` + `table` + `aroma` ➞ **Cafe**
-- `sand` + `ocean` ➞ **Beach**
+| Without El Foto | With El Foto |
+|---|---|
+| Subjects feel awkward in front of the camera | AI-generated pose guide takes the guesswork out |
+| Generic tips don't match the environment | Pose is tailored to the *exact* scene — beach, café, forest |
+| Photographers must give real-time direction | The app acts as an always-on AI photography director |
+| Poses look stiff and unnatural | 33-point BlazePose skeleton ensures anatomically correct, expressive poses |
 
-### 2. Generative Spatial Rigging (Cloud)
-The backend doesn't just return a static image. It uses a **Strict LLM Prompting Strategy** to force Gemini to return a raw BlazePose-compatible JSON array of coordinates.
+---
 
-```json
-{
-  "pose_name": "The Confident Graduate",
-  "keypoints": [{"x": 0.5, "y": 0.15}, ...] 
-}
+## 🏗️ Architecture
+
+El Foto uses a clean **Edge → Cloud → Render** pipeline:
+
+```
+┌─────────────────┐         ┌────────────────────┐         ┌──────────────────────┐
+│  Android (Edge) │──JPEG──▶│  FastAPI Backend   │──API──▶ │  Gemini 2.5 Flash    │
+│                 │         │                    │         │  (Vision + Reasoning) │
+│  CameraX frame  │◀──JSON──│  Pose Coordinator  │◀──JSON──│  Scene + 33 Keypoints │
+│  Compose Canvas │         │                    │         │                      │
+└─────────────────┘         └────────────────────┘         └──────────────────────┘
 ```
 
-### 3. Glow-Buffer Rendering Engine (UI)
-The `PoseOverlay` utilizes a multi-pass drawing strategy:
-- **Pass 1 (Diffusion)**: 18px stroke with 8% alpha for ambient glow.
-- **Pass 2 (Inner Core)**: 10px stroke with 15% alpha.
-- **Pass 3 (Vector)**: 4px solid stroke with 75% alpha for precise alignment.
+### 1. 📸 Frame Capture (Android)
+- `CameraX ImageCapture` snaps an in-memory JPEG on user tap — **no storage permissions required**
+- Frame bytes are streamed directly to the backend via `multipart/form-data`
+- Front / back camera toggle via ViewModel state
+
+### 2. 🧠 AI Scene Analysis + Pose Generation (Backend)
+- Raw JPEG is uploaded to the **FastAPI** backend
+- **Gemini 2.5 Flash Vision** analyzes the actual image — no keyword maps, no hardcoded labels
+- Returns a vivid `scene_name` (e.g. *"sun-drenched golden beach at sunset"*) + a creative `pose_name`
+- Strict prompt engineering forces exactly **33 BlazePose-compatible keypoints** as normalized coordinates
+
+### 3. 🎨 Glow-Buffer Rendering (UI)
+`PoseOverlay` draws a multi-pass skeleton on a Compose `Canvas`:
+
+| Pass | Stroke | Alpha | Effect |
+|------|--------|-------|--------|
+| 1 — Diffusion | 18 px | 8% | Ambient glow halo |
+| 2 — Inner Core | 10 px | 15% | Soft luminous ring |
+| 3 — Vector | 4 px | 75% | Precise alignment guide |
 
 ---
 
-## 🧬 System Flow
+## 🔄 System Flow
 
 ```mermaid
 sequenceDiagram
-    participant U as User (App)
-    participant ML as ML Kit (Local)
-    participant API as FastAPI Backend
-    participant LLM as Gemini 2.5 Flash
+    participant U as 📱 Android App
+    participant API as ⚡ FastAPI Backend
+    participant LLM as 🤖 Gemini 2.5 Flash
 
-    U->>ML: Image Analysis Frame
-    ML->>U: Scene: "Graduation"
-    U->>API: POST /generate-pose {"scene": "Graduation"}
-    API->>LLM: Spatial Rigging Prompt
-    LLM->>API: 33-Point JSON Skeleton
-    API->>U: Normalized Coordinates
-    U->>U: Render Glowing Canvas Overlay
+    U->>U: User taps POSE button
+    U->>U: CameraX captures JPEG frame
+    U->>API: POST /analyze-and-pose (multipart image)
+    API->>LLM: Image + Strict Spatial Rigging Prompt
+    LLM-->>API: { scene_name, pose_name, keypoints[33] }
+    API-->>U: PoseResponse JSON
+    U->>U: Render 3-pass glowing skeleton overlay
+    U->>U: Display vivid scene name + pose name
 ```
 
 ---
 
-## 🏃‍♂️ Deployment Guide
+## 🚀 Quick Start
 
-### Backend: FastAPI Core
+### Prerequisites
+- Android Studio Hedgehog (2023.1.1) or newer
+- Python 3.10+
+- A free [Google AI Studio](https://aistudio.google.com/) API key
+- Android device or emulator with API 26+
+
+---
+
+### Backend Setup
+
 ```bash
-cd backend
-source .venv/bin/activate
-uvicorn main:app --host 0.0.0.0 --port 8000
+# 1. Clone the repo
+git clone https://github.com/Mithun141404/El-Foto.git
+cd El-Foto/backend
+
+# 2. Create and activate a virtual environment
+python -m venv .venv
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Configure your API key
+cp .env.example .env
+# Open .env and set: GEMINI_API_KEY=your_key_here
+
+# 5. Start the server
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
-*Requires `GEMINI_API_KEY` in `.env`*
 
-### Android: Build & Sideload
-1. Open in Android Studio or use CLI:
-   ```bash
-   export JAVA_HOME=~/jdk/jdk-17.0.12
-   ./gradlew assembleDebug
-   ```
-2. Deploy `app-debug.apk` to any device running API 26+.
+The API is now live at `http://localhost:8000`.  
+Visit `http://localhost:8000/docs` for the interactive Swagger UI.
 
 ---
 
-## 🔭 Future Scope
-- **Dynamic Motion Alignment**: Use MediaPipe real-time tracking to turn the overlay green when the user successfully matches the pose.
-- **Multi-Person Support**: Contextual poses for couples or groups.
-- **Scene-Aware Lighting**: Suggest camera settings based on detected ambient light.
+### Android Setup
+
+```bash
+cd El-Foto/android/ContextCamera
+
+# 1. Copy and fill in local.properties
+cp local.properties.example local.properties
+# Edit local.properties:
+#   sdk.dir=/path/to/your/Android/Sdk
+#   BACKEND_URL=http://<your-machine-ip>:8000
+#   (Use 10.0.2.2:8000 for Android Emulator)
+
+# 2. Build and install
+./gradlew installDebug
+```
+
+Or open the `android/ContextCamera` folder in **Android Studio** and press **▶ Run**.
 
 ---
-*This project is an open source and free to use*
+
+## 📡 API Reference
+
+### `POST /analyze-and-pose`
+
+Analyzes a raw camera frame with Gemini Vision and returns a scene description + 33-point pose.
+
+**Request:** `multipart/form-data`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `image` | `File` | JPEG or PNG camera frame |
+
+**Response:** `application/json`
+
+```json
+{
+  "scene_name": "sun-drenched golden beach at sunset",
+  "pose_name": "The Relaxed Shoreline Lean",
+  "keypoints": [
+    { "x": 0.50, "y": 0.14 },
+    { "x": 0.48, "y": 0.17 },
+    "...33 total BlazePose keypoints (normalized 0.0–1.0)"
+  ]
+}
+```
+
+### `GET /health`
+
+```json
+{ "status": "ok", "version": "2.0.0", "recognition": "gemini-vision" }
+```
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology | Role |
+|-------|-----------|------|
+| **Android UI** | Jetpack Compose + Material 3 | Declarative camera UI & glow skeleton overlay |
+| **Camera** | CameraX | Live preview + in-memory JPEG capture |
+| **Networking** | Retrofit 2 + OkHttp | Multipart image upload with 60s timeouts |
+| **Backend** | FastAPI + Uvicorn | High-performance async API server |
+| **AI Model** | Gemini 2.5 Flash (Vision) | Multimodal scene understanding + pose generation |
+| **AI Client** | `google-generativeai` Python SDK | Multimodal content generation |
+| **Config** | `local.properties` + `.env` | Secrets-free, gitignore-safe builds |
+
+---
+
+## 📁 Project Structure
+
+```
+El-Foto/
+├── android/
+│   └── ContextCamera/
+│       ├── app/
+│       │   ├── build.gradle.kts             # BACKEND_URL injected via BuildConfig
+│       │   └── src/main/java/com/contextcamera/app/
+│       │       ├── MainActivity.kt          # App entry point
+│       │       ├── network/
+│       │       │   ├── ApiClient.kt         # Retrofit singleton
+│       │       │   ├── ApiService.kt        # API interface definition
+│       │       │   └── PoseModels.kt        # Keypoint + PoseResponse models
+│       │       ├── ui/
+│       │       │   ├── CameraScreen.kt      # Main camera composable
+│       │       │   └── PoseOverlay.kt       # 3-pass glow canvas renderer
+│       │       ├── viewmodel/
+│       │       │   └── CameraViewModel.kt   # UI state management
+│       │       └── ml/
+│       │           └── SceneClassifier.kt   # (legacy) on-device classifier
+│       └── local.properties.example         # Config template — copy to local.properties
+└── backend/
+    ├── main.py                              # FastAPI app + Gemini Vision logic
+    ├── requirements.txt                     # Python dependencies
+    └── .env.example                         # Secrets template — copy to .env
+```
+
+---
+
+## 🔭 Roadmap
+
+- [x] Real-time Gemini Vision scene analysis (no hardcoded labels)
+- [x] 33-point BlazePose skeleton overlay with 3-pass glow-buffer rendering
+- [x] Front / back camera toggle
+- [ ] **Dynamic Pose Matching** — Turn overlay green when user aligns with the guide (MediaPipe)
+- [ ] **Multi-Person Poses** — Contextual poses for couples and groups
+- [ ] **Scene-Aware Lighting Tips** — Suggest camera settings based on ambient light detection
+- [ ] **Offline Mode** — On-device Gemini Nano for common scene poses
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please open an issue or submit a pull request.
+
+1. Fork the repository
+2. Create your feature branch: `git checkout -b feat/amazing-feature`
+3. Commit your changes: `git commit -m 'feat: add amazing feature'`
+4. Push to the branch: `git push origin feat/amazing-feature`
+5. Open a Pull Request
+
+---
+
+## 📄 License
+
+This project is open source and free to use under the [MIT License](LICENSE).
+
+---
+
+<div align="center">
+
+Built with ❤️ for the **Razorpay AI Builders** hackathon
+
+*Powered by [Google Gemini](https://ai.google.dev/) · [Jetpack Compose](https://developer.android.com/jetpack/compose) · [FastAPI](https://fastapi.tiangolo.com)*
+
+</div>

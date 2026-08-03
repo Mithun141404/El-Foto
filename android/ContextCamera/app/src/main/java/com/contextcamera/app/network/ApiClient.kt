@@ -1,5 +1,6 @@
 package com.contextcamera.app.network
 
+import com.contextcamera.app.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -14,8 +15,8 @@ import java.util.concurrent.TimeUnit
  */
 object ApiClient {
 
-    // ★ Change this to your server's address
-    private const val BASE_URL = "http://192.168.29.86:8000"
+    // ★ Set BACKEND_URL in local.properties (gitignored) — never hardcode your IP here
+    private val BASE_URL = BuildConfig.BACKEND_URL
 
     private val okHttpClient: OkHttpClient by lazy {
         val logging = HttpLoggingInterceptor().apply {

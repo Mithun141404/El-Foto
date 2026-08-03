@@ -1,7 +1,17 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+
+// Read BACKEND_URL from local.properties (gitignored — never committed)
+val localProps = Properties().also { props ->
+    val f = rootProject.file("local.properties")
+    if (f.exists()) props.load(f.inputStream())
+}
+val backendUrl: String = localProps.getProperty("BACKEND_URL")
+    ?: error("BACKEND_URL not found in local.properties. See local.properties.example.")
 
 android {
     namespace = "com.contextcamera.app"
@@ -13,6 +23,9 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
+
+        // Inject BACKEND_URL so source code never contains a hardcoded IP
+        buildConfigField("String", "BACKEND_URL", "\"$backendUrl\"")
     }
 
     buildTypes {
@@ -36,6 +49,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true   // needed for BuildConfig.BACKEND_URL
     }
 
     composeOptions {
@@ -64,9 +78,6 @@ dependencies {
     implementation("androidx.camera:camera-camera2:$cameraxVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
     implementation("androidx.camera:camera-view:$cameraxVersion")
-
-    // ML Kit Image Labeling (bundled on-device model)
-    implementation("com.google.mlkit:image-labeling:17.0.8")
 
     // Networking
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
